@@ -1,3 +1,108 @@
 spring:
   application:
     name: deploybrain
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:deploybrain}
+    username: ${DB_USER:deploybrain}
+    password: ${DB_PASSWORD:deploybrain123}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      timeout: 2000ms
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+    consumer:
+      group-id: log-processors
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+
+  security:
+    user:
+      name: ${ADMIN_USER:admin}
+      password: ${ADMIN_PASSWORD:deploybrain2024}
+      roles: ADMIN
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+github:
+  token: ${GITHUB_TOKEN:}
+  webhook-secret: ${WEBHOOK_SECRET:dev-secret}
+  api-base-url: https://api.github.com
+
+llm:
+  primary: ${LLM_PRIMARY:ollama}
+  fallback: ${LLM_FALLBACK:gemini}
+
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: gemini-2.5-flash
+  embedding-model: text-embedding-004
+  base-url: https://generativelanguage.googleapis.com
+
+groq:
+  api-key: ${GROQ_API_KEY:}
+  model: llama-3.1-70b-versatile
+  base-url: https://api.groq.com/openai/v1
+
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: llama3.1:8b
+
+ml:
+  service:
+    base-url: ${ML_SERVICE_URL:http://localhost:8000}
+    timeout-seconds: 10
+    confidence-threshold: 0.75
+
+aws:
+  s3:
+    bucket-name: ${S3_BUCKET:deploybrain-logs}
+    region: ${AWS_REGION:ap-south-1}
+
+kafka:
+  topic:
+    build-logs: build-logs
+    partitions: 4
+    replication-factor: 1
+
+logging:
+  level:
+    com.deploybrain: DEBUG
+    org.springframework.security: INFO
+    org.apache.kafka: WARN
