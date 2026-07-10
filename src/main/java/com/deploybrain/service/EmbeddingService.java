@@ -52,7 +52,8 @@ public class EmbeddingService {
 
         Map<String, Object> requestBody = Map.of(
                 "model", "models/" + embeddingModel,
-                "content", Map.of("parts", List.of(Map.of("text", text)))
+                "content", Map.of("parts", List.of(Map.of("text", text))),
+                "outputDimensionality", EXPECTED_DIMENSIONS
         );
 
         HttpHeaders headers = new HttpHeaders();
