@@ -72,7 +72,7 @@ llm:
 gemini:
   api-key: ${GEMINI_API_KEY:}
   model: gemini-2.5-flash
-  embedding-model: text-embedding-004
+  embedding-model: gemini-embedding-001
   base-url: https://generativelanguage.googleapis.com
 
 groq:
@@ -103,6 +103,9 @@ kafka:
     build-events: build-events
     partitions: 4
     replication-factor: 1
+
+  consumer:
+    embedding-group-id: embedding-processors
 
 logging:
   level:
