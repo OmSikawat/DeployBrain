@@ -19,10 +19,16 @@ public class LogChunkingService {
 
     private final LogChunkRepository logChunkRepository;
     private final BuildRepository buildRepository;
+    private final BuildEventProducer buildEventProducer;
 
-    public LogChunkingService(LogChunkRepository logChunkRepository, BuildRepository buildRepository) {
+    public LogChunkingService(
+            LogChunkRepository logChunkRepository,
+            BuildRepository buildRepository,
+            BuildEventProducer buildEventProducer
+    ) {
         this.logChunkRepository = logChunkRepository;
         this.buildRepository = buildRepository;
+        this.buildEventProducer = buildEventProducer;
     }
 
     public void chunkAndSave(Build build, Map<String, String> jobLogs) {
@@ -68,6 +74,8 @@ public class LogChunkingService {
 
         log.info("Chunked {} log chunk(s) across {} job(s) for build {}",
                 totalChunksSaved, jobLogs.size(), build.getId());
+
+        buildEventProducer.publishChunkedEvent(build);
     }
 
     private List<List<String>> splitIntoSegments(List<String> lines, int segmentSize) {

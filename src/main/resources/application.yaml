@@ -100,7 +100,7 @@ aws:
 
 kafka:
   topic:
-    build-logs: build-logs
+    build-events: build-events
     partitions: 4
     replication-factor: 1
 
