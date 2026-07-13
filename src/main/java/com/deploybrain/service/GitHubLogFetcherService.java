@@ -48,14 +48,30 @@ public class GitHubLogFetcherService {
     @Async
     public void processBuildLogs(Build build) {
         try {
+            // GitHub's log archive can lag slightly behind the workflow_run
+            // webhook firing, especially for very short-lived jobs. A brief
+            // delay reduces the risk of fetching a partially-written log.
+            Thread.sleep(5000);
+
             byte[] zipBytes = gitHubApiClient.downloadLogZip(build.getLogsUrl());
 
             s3LogArchiveService.archiveLogZip(build.getRepoName(), build.getId(), zipBytes);
 
             Map<String, String> jobLogs = unzipLogs(zipBytes, build.getId());
 
+            // NEW: flag suspiciously small logs for visibility
+            for (Map.Entry<String, String> entry : jobLogs.entrySet()) {
+                if (entry.getValue().length() < 1000) {
+                    log.warn("Suspiciously small log ({} chars) for job '{}' in build {} - may indicate incomplete log fetch",
+                            entry.getValue().length(), entry.getKey(), build.getId());
+                }
+            }
+
             logChunkingService.chunkAndSave(build, jobLogs);
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Interrupted while waiting before log fetch for build {}", build.getId());
         } catch (Exception e) {
             log.error("Failed to process logs for build {}: {}", build.getId(), e.getMessage(), e);
             build.setStatus(Build.BuildStatus.ERROR);
@@ -63,8 +79,93 @@ public class GitHubLogFetcherService {
         }
     }
 
+//    private Map<String, String> unzipLogs(byte[] zipBytes, java.util.UUID buildId) {
+//        Map<String, String> jobLogs = new LinkedHashMap<>();
+//
+//        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+//            ZipEntry entry;
+//            while ((entry = zis.getNextEntry()) != null) {
+//
+//                if (entry.isDirectory()) {
+//                    continue;
+//                }
+//                if (!entry.getName().endsWith(".txt")) {
+//                    continue;
+//                }
+//
+//                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+//                byte[] buffer = new byte[4096];
+//                int len;
+//                while ((len = zis.read(buffer)) > 0) {
+//                    baos.write(buffer, 0, len);
+//                }
+//
+//                String content = baos.toString(StandardCharsets.UTF_8);
+//
+//                if (content.getBytes(StandardCharsets.UTF_8).length > WARN_LOG_SIZE_BYTES) {
+//                    log.warn("Log file {} for build {} exceeds {}MB - proceeding without truncation (hard limit added Day 16)",
+//                            entry.getName(), buildId, WARN_LOG_SIZE_BYTES / (1024 * 1024));
+//                }
+//
+//                String jobName = extractJobName(entry.getName());
+//                jobLogs.put(jobName, content);
+//            }
+//        } catch (IOException e) {
+//            log.error("Failed to unzip log archive for build {}: {}", buildId, e.getMessage());
+//            throw new LogFetchException("Corrupted or incomplete log archive", e);
+//        }
+//
+//        if (jobLogs.isEmpty()) {
+//            log.warn("No log content found in zip for build {} - workflow may have failed before any job started", buildId);
+//        }
+//
+//        return jobLogs;
+//    }
+
+//    private Map<String, String> unzipLogs(byte[] zipBytes, java.util.UUID buildId) {
+//        Map<String, String> jobLogs = new LinkedHashMap<>();
+//
+//        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+//            ZipEntry entry;
+//            while ((entry = zis.getNextEntry()) != null) {
+//
+//                if (entry.isDirectory()) {
+//                    continue;
+//                }
+//                if (!entry.getName().endsWith(".txt")) {
+//                    continue;
+//                }
+//
+//                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+//                byte[] buffer = new byte[4096];
+//                int len;
+//                while ((len = zis.read(buffer)) > 0) {
+//                    baos.write(buffer, 0, len);
+//                }
+//
+//                String content = baos.toString(StandardCharsets.UTF_8);
+//                String jobName = extractJobName(entry.getName());
+//
+//                // TEMPORARY DIAGNOSTIC - remove after confirming the issue
+//                log.info("Zip entry: '{}' -> derived jobName: '{}' -> content length: {}",
+//                        entry.getName(), jobName, content.length());
+//
+//                jobLogs.put(jobName, content);
+//            }
+//        } catch (IOException e) {
+//            log.error("Failed to unzip log archive for build {}: {}", buildId, e.getMessage());
+//            throw new LogFetchException("Corrupted or incomplete log archive", e);
+//        }
+//
+//        if (jobLogs.isEmpty()) {
+//            log.warn("No log content found in zip for build {} - workflow may have failed before any job started", buildId);
+//        }
+//
+//        return jobLogs;
+//    }
+
     private Map<String, String> unzipLogs(byte[] zipBytes, java.util.UUID buildId) {
-        Map<String, String> jobLogs = new LinkedHashMap<>();
+        Map<String, StringBuilder> jobLogsBuilder = new LinkedHashMap<>();
 
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             ZipEntry entry;
@@ -76,6 +177,10 @@ public class GitHubLogFetcherService {
                 if (!entry.getName().endsWith(".txt")) {
                     continue;
                 }
+                // skip the noisy per-job system metadata file, not real step output
+                if (entry.getName().endsWith("/system.txt")) {
+                    continue;
+                }
 
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 byte[] buffer = new byte[4096];
@@ -85,18 +190,30 @@ public class GitHubLogFetcherService {
                 }
 
                 String content = baos.toString(StandardCharsets.UTF_8);
+                String jobName = extractJobName(entry.getName());
 
                 if (content.getBytes(StandardCharsets.UTF_8).length > WARN_LOG_SIZE_BYTES) {
                     log.warn("Log file {} for build {} exceeds {}MB - proceeding without truncation (hard limit added Day 16)",
                             entry.getName(), buildId, WARN_LOG_SIZE_BYTES / (1024 * 1024));
                 }
 
-                String jobName = extractJobName(entry.getName());
-                jobLogs.put(jobName, content);
+                // APPEND rather than overwrite - concatenate every step's
+                // output for a given job into one combined log, in the order
+                // the zip entries were encountered (which matches step order).
+                jobLogsBuilder
+                        .computeIfAbsent(jobName, k -> new StringBuilder())
+                        .append("--- ").append(entry.getName()).append(" ---\n")
+                        .append(content)
+                        .append("\n\n");
             }
         } catch (IOException e) {
             log.error("Failed to unzip log archive for build {}: {}", buildId, e.getMessage());
             throw new LogFetchException("Corrupted or incomplete log archive", e);
+        }
+
+        Map<String, String> jobLogs = new LinkedHashMap<>();
+        for (Map.Entry<String, StringBuilder> e : jobLogsBuilder.entrySet()) {
+            jobLogs.put(e.getKey(), e.getValue().toString());
         }
 
         if (jobLogs.isEmpty()) {

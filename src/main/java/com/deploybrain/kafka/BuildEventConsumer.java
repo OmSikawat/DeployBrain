@@ -4,6 +4,7 @@ import com.deploybrain.dto.BuildEventMessage;
 import com.deploybrain.entity.Build;
 import com.deploybrain.repository.BuildRepository;
 import com.deploybrain.service.BuildStateService;
+import com.deploybrain.service.ClassificationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -18,15 +19,18 @@ public class BuildEventConsumer {
     private final ObjectMapper objectMapper;
     private final BuildStateService buildStateService;
     private final BuildRepository buildRepository;
+    private final ClassificationService classificationService;
 
     public BuildEventConsumer(
             ObjectMapper objectMapper,
             BuildStateService buildStateService,
-            BuildRepository buildRepository
+            BuildRepository buildRepository,
+            ClassificationService classificationService
     ) {
         this.objectMapper = objectMapper;
         this.buildStateService = buildStateService;
         this.buildRepository = buildRepository;
+        this.classificationService = classificationService;
     }
 
     @KafkaListener(
@@ -39,16 +43,11 @@ public class BuildEventConsumer {
         try {
             event = objectMapper.readValue(rawMessage, BuildEventMessage.class);
         } catch (Exception e) {
-            // Malformed / poison-pill message - log and move on rather than
-            // crashing this consumer thread or blocking the partition.
             log.error("Failed to deserialize build event, skipping malformed message: {} - raw: {}",
                     e.getMessage(), rawMessage);
             return;
         }
 
-        // tryMarkProcessing throws if Redis is unreachable - deliberately
-        // NOT caught here, so KafkaConfig's DefaultErrorHandler retries
-        // this whole invocation instead of silently dropping the event.
         if (!buildStateService.tryMarkProcessing(event.getBuildId())) {
             log.info("Build {} already being processed or already processed - skipping duplicate event",
                     event.getBuildId());
@@ -62,10 +61,7 @@ public class BuildEventConsumer {
         }
 
         Build build = buildOpt.get();
-
-        // Day 9 replaces this log line with: classificationService.classify(build);
-        log.info("Build {} ({}) is ready for classification (placeholder until Day 9)",
-                build.getId(), build.getRepoName());
+        classificationService.classify(build);
 
         buildStateService.markProcessed(event.getBuildId());
     }
