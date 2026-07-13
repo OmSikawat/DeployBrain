@@ -22,6 +22,7 @@ public class WebhookController {
 
     private static final String CONCLUSION_FAILURE = "failure";
     private static final String CONCLUSION_TIMED_OUT = "timed_out";
+    private static final String CONCLUSION_CANCELLED = "cancelled";
 
     @PostMapping("/github")
     public ResponseEntity<String> handleGithubWebhook(
@@ -55,7 +56,13 @@ public class WebhookController {
 
         String conclusion = payload.getWorkflowRun().getConclusion();
 
-        if (!CONCLUSION_FAILURE.equals(conclusion) && !CONCLUSION_TIMED_OUT.equals(conclusion)) {
+//        if (!CONCLUSION_FAILURE.equals(conclusion) && !CONCLUSION_TIMED_OUT.equals(conclusion)) {
+//            log.info("Ignoring workflow_run with conclusion: {}", conclusion);
+//            return ResponseEntity.ok("Non-failure conclusion ignored");
+//        }
+        if (!CONCLUSION_FAILURE.equals(conclusion)
+                && !CONCLUSION_TIMED_OUT.equals(conclusion)
+                && !CONCLUSION_CANCELLED.equals(conclusion)) {
             log.info("Ignoring workflow_run with conclusion: {}", conclusion);
             return ResponseEntity.ok("Non-failure conclusion ignored");
         }
