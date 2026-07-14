@@ -55,79 +55,89 @@ public class ClassificationService {
     @CircuitBreaker(name = "mlService", fallbackMethod = "classifyFallback")
     @Retry(name = "mlService")
     public void classify(Build build) {
-
-        List<LogChunk> chunks = logChunkRepository.findByBuildIdOrderByChunkIndex(build.getId());
-
-        if (chunks.isEmpty()) {
-            log.warn("No log chunks found for build {} - cannot classify", build.getId());
-            build.setStatus(Build.BuildStatus.ERROR);
-            buildRepository.save(build);
-            return;
-        }
-
-        String combinedText = reassembleChunks(chunks);
-
-        if (combinedText.isBlank()) {
-            log.warn("Reassembled log text is blank for build {} - cannot classify", build.getId());
-            build.setStatus(Build.BuildStatus.ERROR);
-            buildRepository.save(build);
-            return;
-        }
-
-        ClassifyRequest request = new ClassifyRequest(combinedText, build.getId().toString());
-        ClassifyResponse response = mlServiceRestTemplate.postForObject(
-                mlServiceBaseUrl + "/classify",
-                request,
-                ClassifyResponse.class
-        );
-
-        if (response == null) {
-            log.error("ML service returned null response for build {}", build.getId());
-            markClassificationFailed(build);
-            return;
-        }
-
-        Failure.FailureType failureType;
         try {
-            failureType = Failure.FailureType.valueOf(response.getFailureType());
-        } catch (IllegalArgumentException e) {
-            log.error("ML service returned unrecognized failure type '{}' for build {} - treating as classification failure",
-                    response.getFailureType(), build.getId());
+            List<LogChunk> chunks = logChunkRepository.findByBuildIdOrderByChunkIndex(build.getId());
+
+            if (chunks.isEmpty()) {
+                log.warn("No log chunks found for build {} - cannot classify", build.getId());
+                build.setStatus(Build.BuildStatus.ERROR);
+                buildRepository.save(build);
+                return;
+            }
+
+            String combinedText = reassembleChunks(chunks);
+
+            if (combinedText.isBlank()) {
+                log.warn("Reassembled log text is blank for build {} - cannot classify", build.getId());
+                build.setStatus(Build.BuildStatus.ERROR);
+                buildRepository.save(build);
+                return;
+            }
+
+            ClassifyRequest request = new ClassifyRequest(combinedText, build.getId().toString());
+            ClassifyResponse response = mlServiceRestTemplate.postForObject(
+                    mlServiceBaseUrl + "/classify",
+                    request,
+                    ClassifyResponse.class
+            );
+
+            if (response == null) {
+                log.error("ML service returned null response for build {}", build.getId());
+                markClassificationFailed(build);
+                return;
+            }
+
+            Failure.FailureType failureType;
+            try {
+                failureType = Failure.FailureType.valueOf(response.getFailureType());
+            } catch (IllegalArgumentException e) {
+                log.error("ML service returned unrecognized failure type '{}' for build {} - treating as classification failure",
+                        response.getFailureType(), build.getId());
+                markClassificationFailed(build);
+                return;
+            }
+
+            double confidence = response.getConfidence() != null ? response.getConfidence() : 0.0;
+            String evidenceLines = response.getEvidenceLines() != null
+                    ? String.join("\n", response.getEvidenceLines())
+                    : "";
+
+            Failure failure = Failure.builder()
+                    .build(build)
+                    .failureType(failureType)
+                    .confidence(confidence)
+                    .evidenceLines(evidenceLines)
+                    .build();
+
+            Build.BuildStatus resultStatus;
+            Failure.AgentStatus agentStatus;
+
+            if (confidence >= confidenceThreshold) {
+                resultStatus = Build.BuildStatus.AGENT_PENDING;
+                agentStatus = Failure.AgentStatus.PENDING;
+            } else {
+                resultStatus = Build.BuildStatus.NEEDS_REVIEW;
+                agentStatus = Failure.AgentStatus.NEEDS_REVIEW;
+            }
+
+            failure.setAgentStatus(agentStatus);
+            failureRepository.save(failure);
+
+            build.setStatus(resultStatus);
+            buildRepository.save(build);
+
+            log.info("Classified build {}: type={}, confidence={}, status={}",
+                    build.getId(), failureType, confidence, resultStatus);
+
+        } catch (Exception e) {
+            // Catches EVERYTHING unexpected here - PSQLException, network
+            // errors, anything - so a single unexpected exception type
+            // doesn't bypass proper failure handling and leave the build
+            // in an ambiguous state.
+            log.error("Unexpected error during classification for build {}: {} - {}",
+                    build.getId(), e.getClass().getSimpleName(), e.getMessage(), e);
             markClassificationFailed(build);
-            return;
         }
-
-        double confidence = response.getConfidence() != null ? response.getConfidence() : 0.0;
-        String evidenceLines = response.getEvidenceLines() != null
-                ? String.join("\n", response.getEvidenceLines())
-                : "";
-
-        Failure failure = Failure.builder()
-                .build(build)
-                .failureType(failureType)
-                .confidence(confidence)
-                .evidenceLines(evidenceLines)
-                .build();
-
-        Build.BuildStatus resultStatus;
-        Failure.AgentStatus agentStatus;
-
-        if (confidence >= confidenceThreshold) {
-            resultStatus = Build.BuildStatus.AGENT_PENDING;
-            agentStatus = Failure.AgentStatus.PENDING;
-        } else {
-            resultStatus = Build.BuildStatus.NEEDS_REVIEW;
-            agentStatus = Failure.AgentStatus.NEEDS_REVIEW;
-        }
-
-        failure.setAgentStatus(agentStatus);
-        failureRepository.save(failure);
-
-        build.setStatus(resultStatus);
-        buildRepository.save(build);
-
-        log.info("Classified build {}: type={}, confidence={}, status={}",
-                build.getId(), failureType, confidence, resultStatus);
     }
 
     /**

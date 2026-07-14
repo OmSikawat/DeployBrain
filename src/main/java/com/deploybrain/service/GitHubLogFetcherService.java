@@ -164,6 +164,65 @@ public class GitHubLogFetcherService {
 //        return jobLogs;
 //    }
 
+//    private Map<String, String> unzipLogs(byte[] zipBytes, java.util.UUID buildId) {
+//        Map<String, StringBuilder> jobLogsBuilder = new LinkedHashMap<>();
+//
+//        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+//            ZipEntry entry;
+//            while ((entry = zis.getNextEntry()) != null) {
+//
+//                if (entry.isDirectory()) {
+//                    continue;
+//                }
+//                if (!entry.getName().endsWith(".txt")) {
+//                    continue;
+//                }
+//                // skip the noisy per-job system metadata file, not real step output
+//                if (entry.getName().endsWith("/system.txt")) {
+//                    continue;
+//                }
+//
+//                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+//                byte[] buffer = new byte[4096];
+//                int len;
+//                while ((len = zis.read(buffer)) > 0) {
+//                    baos.write(buffer, 0, len);
+//                }
+//
+//                String content = baos.toString(StandardCharsets.UTF_8);
+//                String jobName = extractJobName(entry.getName());
+//
+//                if (content.getBytes(StandardCharsets.UTF_8).length > WARN_LOG_SIZE_BYTES) {
+//                    log.warn("Log file {} for build {} exceeds {}MB - proceeding without truncation (hard limit added Day 16)",
+//                            entry.getName(), buildId, WARN_LOG_SIZE_BYTES / (1024 * 1024));
+//                }
+//
+//                // APPEND rather than overwrite - concatenate every step's
+//                // output for a given job into one combined log, in the order
+//                // the zip entries were encountered (which matches step order).
+//                jobLogsBuilder
+//                        .computeIfAbsent(jobName, k -> new StringBuilder())
+//                        .append("--- ").append(entry.getName()).append(" ---\n")
+//                        .append(content)
+//                        .append("\n\n");
+//            }
+//        } catch (IOException e) {
+//            log.error("Failed to unzip log archive for build {}: {}", buildId, e.getMessage());
+//            throw new LogFetchException("Corrupted or incomplete log archive", e);
+//        }
+//
+//        Map<String, String> jobLogs = new LinkedHashMap<>();
+//        for (Map.Entry<String, StringBuilder> e : jobLogsBuilder.entrySet()) {
+//            jobLogs.put(e.getKey(), e.getValue().toString());
+//        }
+//
+//        if (jobLogs.isEmpty()) {
+//            log.warn("No log content found in zip for build {} - workflow may have failed before any job started", buildId);
+//        }
+//
+//        return jobLogs;
+//    }
+
     private Map<String, String> unzipLogs(byte[] zipBytes, java.util.UUID buildId) {
         Map<String, StringBuilder> jobLogsBuilder = new LinkedHashMap<>();
 
@@ -177,8 +236,7 @@ public class GitHubLogFetcherService {
                 if (!entry.getName().endsWith(".txt")) {
                     continue;
                 }
-                // skip the noisy per-job system metadata file, not real step output
-                if (entry.getName().endsWith("/system.txt")) {
+                if (isNoiseEntry(entry.getName())) {
                     continue;
                 }
 
@@ -197,9 +255,6 @@ public class GitHubLogFetcherService {
                             entry.getName(), buildId, WARN_LOG_SIZE_BYTES / (1024 * 1024));
                 }
 
-                // APPEND rather than overwrite - concatenate every step's
-                // output for a given job into one combined log, in the order
-                // the zip entries were encountered (which matches step order).
                 jobLogsBuilder
                         .computeIfAbsent(jobName, k -> new StringBuilder())
                         .append("--- ").append(entry.getName()).append(" ---\n")
@@ -221,6 +276,28 @@ public class GitHubLogFetcherService {
         }
 
         return jobLogs;
+    }
+
+    /**
+     * Filters out known-noisy zip entries that are near-identical across
+     * every workflow (runner provisioning info, generic setup/teardown
+     * steps) and contribute no classification signal - confirmed via
+     * direct inspection that these entries dilute TF-IDF features with
+     * shared boilerplate text present in every single log regardless of
+     * actual failure type.
+     */
+    private boolean isNoiseEntry(String entryName) {
+        String lowerName = entryName.toLowerCase();
+
+        if (lowerName.matches("^\\d+_[a-z0-9\\-]+\\.txt$")) {
+            return true;
+        }
+
+        return lowerName.endsWith("/system.txt")
+                || lowerName.contains("/1_set up job.txt")
+                || lowerName.contains("set up java")
+                || lowerName.contains("run actions_checkout")
+                || lowerName.contains("complete job.txt");
     }
 
     private String extractJobName(String zipEntryName) {
