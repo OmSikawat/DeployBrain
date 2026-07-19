@@ -35,6 +35,7 @@ public class BuildIngestionService {
                 .repoOwner(payload.getRepository().getOwner().getLogin())
                 .commitSha(payload.getWorkflowRun().getHeadSha())
                 .workflowName(payload.getWorkflowRun().getName())
+                .workflowFilePath(payload.getWorkflowRun().getPath())
                 .workflowRunId(workflowRunId)
                 .logsUrl(payload.getWorkflowRun().getLogsUrl())
                 .status(Build.BuildStatus.RECEIVED)

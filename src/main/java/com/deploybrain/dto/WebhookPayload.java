@@ -51,6 +51,9 @@ public class WebhookPayload {
         @JsonProperty("name")
         private String name;
 
+        @JsonProperty("path")
+        private String path;
+
         @JsonProperty("head_sha")
         private String headSha;
 

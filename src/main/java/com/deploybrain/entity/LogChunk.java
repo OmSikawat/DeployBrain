@@ -34,6 +34,7 @@ public class LogChunk {
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VECTOR)
     @Column(name = "embedding", columnDefinition = "vector(768)")
     private float[] embedding;
 

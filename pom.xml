@@ -113,6 +113,11 @@
             <artifactId>pgvector</artifactId>
             <version>0.1.4</version>
         </dependency>
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-vector</artifactId>
+            <version>${hibernate.version}</version>
+        </dependency>
 
 <!--         Resilience4j for circuit breaker on ML service calls -->
         <dependency>

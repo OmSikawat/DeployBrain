@@ -1,0 +1,1 @@
+ALTER TABLE builds ADD COLUMN workflow_file_path VARCHAR(500);

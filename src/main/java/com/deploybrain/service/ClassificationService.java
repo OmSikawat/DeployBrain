@@ -1,5 +1,6 @@
 package com.deploybrain.service;
 
+import com.deploybrain.agent.AgentOrchestrator;
 import com.deploybrain.dto.ClassifyRequest;
 import com.deploybrain.dto.ClassifyResponse;
 import com.deploybrain.entity.Build;
@@ -8,7 +9,6 @@ import com.deploybrain.entity.LogChunk;
 import com.deploybrain.repository.BuildRepository;
 import com.deploybrain.repository.FailureRepository;
 import com.deploybrain.repository.LogChunkRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -28,6 +27,7 @@ public class ClassificationService {
     private final LogChunkRepository logChunkRepository;
     private final BuildRepository buildRepository;
     private final FailureRepository failureRepository;
+    private final AgentOrchestrator agentOrchestrator;
 
     @Value("${ml.service.base-url}")
     private String mlServiceBaseUrl;
@@ -39,19 +39,16 @@ public class ClassificationService {
             @Qualifier("mlServiceRestTemplate") RestTemplate mlServiceRestTemplate,
             LogChunkRepository logChunkRepository,
             BuildRepository buildRepository,
-            FailureRepository failureRepository
+            FailureRepository failureRepository,
+            AgentOrchestrator agentOrchestrator
     ) {
         this.mlServiceRestTemplate = mlServiceRestTemplate;
         this.logChunkRepository = logChunkRepository;
         this.buildRepository = buildRepository;
         this.failureRepository = failureRepository;
+        this.agentOrchestrator = agentOrchestrator;
     }
 
-    /**
-     * Whole-build classification: reassembles ALL job chunks for a build
-     * into one combined text and classifies the build once. Matches the
-     * Failure entity's schema (one row per build_id, not per job).
-     */
     @CircuitBreaker(name = "mlService", fallbackMethod = "classifyFallback")
     @Retry(name = "mlService")
     public void classify(Build build) {
@@ -129,23 +126,17 @@ public class ClassificationService {
             log.info("Classified build {}: type={}, confidence={}, status={}",
                     build.getId(), failureType, confidence, resultStatus);
 
+            if (resultStatus == Build.BuildStatus.AGENT_PENDING) {
+                agentOrchestrator.investigateAndFix(failure);
+            }
+
         } catch (Exception e) {
-            // Catches EVERYTHING unexpected here - PSQLException, network
-            // errors, anything - so a single unexpected exception type
-            // doesn't bypass proper failure handling and leave the build
-            // in an ambiguous state.
             log.error("Unexpected error during classification for build {}: {} - {}",
                     build.getId(), e.getClass().getSimpleName(), e.getMessage(), e);
             markClassificationFailed(build);
         }
     }
 
-    /**
-     * Called by Resilience4j after retry is exhausted AND circuit breaker
-     * determines the call should not proceed (open state) or the original
-     * call threw an exception after retries. One retry + this fallback =
-     * catches transient blips, gives up cleanly on persistent failures.
-     */
     private void classifyFallback(Build build, Exception ex) {
         log.error("ML service call failed after retry for build {}: {}", build.getId(), ex.getMessage());
         markClassificationFailed(build);

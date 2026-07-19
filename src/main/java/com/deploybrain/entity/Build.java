@@ -30,6 +30,9 @@ public class Build {
     @Column(name = "workflow_name")
     private String workflowName;
 
+    @Column(name = "workflow_file_path")
+    private String workflowFilePath;
+
     @Column(name = "workflow_run_id", nullable = false, unique = true)
     private Long workflowRunId;
 

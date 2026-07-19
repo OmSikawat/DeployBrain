@@ -34,6 +34,9 @@ public class PromptBuilder {
         sb.append("Build ID: ").append(context.getBuildId()).append("\n");
         sb.append("Repository: ").append(context.getRepoFullName()).append("\n");
         sb.append("Commit SHA: ").append(context.getCommitSha()).append("\n");
+        sb.append("Workflow file that triggered this build: ")
+                .append(context.getWorkflowFilePath() != null ? context.getWorkflowFilePath() : "unknown")
+                .append("\n");
         sb.append("Failure type (from ML classifier): ").append(context.getFailureType()).append("\n");
         sb.append("Classifier confidence: ").append(String.format("%.0f%%", context.getConfidence() * 100)).append("\n\n");
         sb.append("Evidence lines from the build log:\n```\n");

@@ -15,6 +15,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class FailureContext {
+    private String workflowFilePath;
     private UUID failureId;
     private UUID buildId;
     private String repoFullName;

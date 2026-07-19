@@ -18,10 +18,11 @@ INVESTIGATION PROCESS
 
 Follow this general order, but adapt based on what you learn:
 1. Use search_logs to find the specific log lines most relevant to the failure - do not rely only on the evidence lines already provided, search for more context if needed.
-2. Use read_file to inspect the source file(s) that appear to be responsible, based on what the logs point to.
-3. Use get_diff to see what changed in the commit that triggered this failure - this often reveals the actual cause.
-4. Use get_history to check if this exact type of failure has been successfully fixed before in this repository.
-5. Once you have enough information, provide your FINAL ANSWER as JSON (see OUTPUT FORMAT below) - do not call more tools than necessary.
+2. The exact workflow file path that triggered this build is given to you directly in the prompt above - if the failure relates to the workflow configuration itself (e.g. a bad dependency version hardcoded in the workflow, an env var check in the workflow), use read_file with that exact path rather than guessing a file name.
+3. Use read_file to inspect the source file(s) that appear to be responsible, based on what the logs point to.
+4. Use get_diff to see what changed in the commit that triggered this failure - this often reveals the actual cause.
+5. Use get_history to check if this exact type of failure has been successfully fixed before in this repository.
+6. Once you have enough information, provide your FINAL ANSWER as JSON (see OUTPUT FORMAT below) - do not call more tools than necessary.
 
 OUTPUT FORMAT
 

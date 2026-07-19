@@ -71,13 +71,13 @@ llm:
 
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  model: gemini-2.5-flash
+  model: gemini-3.5-flash
   embedding-model: gemini-embedding-001
   base-url: https://generativelanguage.googleapis.com
 
 groq:
   api-key: ${GROQ_API_KEY:}
-  model: llama-3.1-70b-versatile
+  model: openai/gpt-oss-120b
   base-url: https://api.groq.com/openai/v1
 
 ollama:

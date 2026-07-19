@@ -8,13 +8,21 @@ import org.springframework.web.client.RestTemplate;
 import java.time.Duration;
 
 @Configuration
-public class GeminiConfig {
+public class LlmConfig {
 
     @Bean
-    public RestTemplate geminiRestTemplate(RestTemplateBuilder builder) {
+    public RestTemplate groqRestTemplate(RestTemplateBuilder builder) {
         return builder
                 .connectTimeout(Duration.ofSeconds(10))
                 .readTimeout(Duration.ofSeconds(60))
+                .build();
+    }
+
+    @Bean
+    public RestTemplate ollamaRestTemplate(RestTemplateBuilder builder) {
+        return builder
+                .connectTimeout(Duration.ofSeconds(15))
+                .readTimeout(Duration.ofSeconds(600)) // CPU-only 8B model needs real headroom, especially cold-started
                 .build();
     }
 }
