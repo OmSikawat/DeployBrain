@@ -11,9 +11,11 @@ import org.springframework.stereotype.Service;
 public class AgentTraceService {
 
     private final AgentTraceRepository agentTraceRepository;
+    private final AgentTracePublisher agentTracePublisher;
 
-    public AgentTraceService(AgentTraceRepository agentTraceRepository) {
+    public AgentTraceService(AgentTraceRepository agentTraceRepository, AgentTracePublisher agentTracePublisher) {
         this.agentTraceRepository = agentTraceRepository;
+        this.agentTracePublisher = agentTracePublisher;
     }
 
     public void saveStep(Failure failure, int stepIndex, String thought, String toolName,
@@ -29,11 +31,9 @@ public class AgentTraceService {
                 .durationMs(durationMs)
                 .build();
 
-        agentTraceRepository.save(trace);
+        AgentTrace saved = agentTraceRepository.save(trace);
         log.info("Saved agent trace step {} for failure {}: tool={}", stepIndex, failure.getId(), toolName);
 
-        // Live WebSocket streaming to a dashboard is added on Day 16
-        // (AgentTracePublisher). Every step is fully persisted here
-        // regardless, so nothing is lost by deferring that piece.
+        agentTracePublisher.publish(saved);
     }
 }

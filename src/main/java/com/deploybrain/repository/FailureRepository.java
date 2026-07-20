@@ -17,4 +17,5 @@ public interface FailureRepository extends JpaRepository<Failure, UUID> {
             Failure.FailureType failureType,
             Failure.AgentStatus agentStatus
     );
+    List<Failure> findByBuild_TriggeredAtAfter(java.time.LocalDateTime since);
 }

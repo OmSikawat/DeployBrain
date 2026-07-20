@@ -21,14 +21,19 @@ public class LogChunkingService {
     private final BuildRepository buildRepository;
     private final BuildEventProducer buildEventProducer;
 
+    // add to constructor and field:
+    private final LogSizeLimiter logSizeLimiter;
+
     public LogChunkingService(
             LogChunkRepository logChunkRepository,
             BuildRepository buildRepository,
-            BuildEventProducer buildEventProducer
+            BuildEventProducer buildEventProducer,
+            LogSizeLimiter logSizeLimiter
     ) {
         this.logChunkRepository = logChunkRepository;
         this.buildRepository = buildRepository;
         this.buildEventProducer = buildEventProducer;
+        this.logSizeLimiter = logSizeLimiter;
     }
 
     public void chunkAndSave(Build build, Map<String, String> jobLogs) {
@@ -46,6 +51,7 @@ public class LogChunkingService {
         for (Map.Entry<String, String> jobEntry : jobLogs.entrySet()) {
             String jobName = jobEntry.getKey();
             String content = jobEntry.getValue();
+            content = logSizeLimiter.limitIfNeeded(jobName, content);
             totalBytes += content.getBytes().length;
 
             List<String> lines = List.of(content.split("\n", -1));
